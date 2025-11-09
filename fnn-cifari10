@@ -1,0 +1,121 @@
+# --- a. Import the necessary packages ---
+
+import pandas as pd
+import numpy as np
+import tensorflow as tf
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import Dense, Flatten
+from tensorflow.keras.optimizers import SGD
+from tensorflow.keras.utils import to_categorical
+import matplotlib.pyplot as plt
+
+
+def load_and_preprocess_data(filepath, num_classes=10):
+
+    # 1. Load the dataset
+    print(f"Loading data from: {filepath}...")
+    data = pd.read_csv(filepath)
+
+    # 2. Separate features (pixels) and target (label)
+    X = data.iloc[:, :-1].values.astype('float32') # Pixel data starts from the second column
+    y = data['label'].values
+
+    # 3. Normalise the pixel data: Scale to the range [0, 1]
+    # MNIST pixels are 0 to 255 (unsigned 8-bit integers)
+    X /= 255.0
+
+    # 4. One-hot encode the target labels (e.g., 5 -> [0, 0, 0, 0, 0, 1, 0, 0, 0, 0])
+    y = to_categorical(y, num_classes=num_classes)
+
+    return X, y
+
+
+    # --- b. Load the training and testing data ---
+
+X_train, y_train = load_and_preprocess_data('/content/drive/MyDrive/colab datasets/LP4_datasets/cifar_train.csv')
+X_test, y_test = load_and_preprocess_data('/content/drive/MyDrive/colab datasets/LP4_datasets/cifar_test.csv')
+
+
+
+
+# --- c. Define the network architecture using Keras ---
+
+# The CIFAR-10 image is 32x32x3 = 3072 pixels.
+# The Sequential model defines a linear stack of layers.
+
+model = Sequential([
+    # Input layer: Flattens the 784-element feature vector
+    Flatten(input_shape=(3072,)),
+
+    # First Hidden Layer: A fully-connected layer with 512 neurons and ReLU activation
+    Dense(512, activation='relu', name='Hidden_Layer_1'),
+
+    # Second Hidden Layer: A fully-connected layer with 256 neurons and ReLU activation
+    Dense(256, activation='relu', name='Hidden_Layer_2'),
+
+    # Output Layer: 10 neurons (for digits 0-9) and Softmax for classification probability
+    Dense(10, activation='softmax', name='Output_Layer')
+])
+
+
+
+
+# Compile the model
+# We use categorical crossentropy because the labels are one-hot encoded
+
+model.compile(
+    optimizer=SGD(learning_rate=0.01),
+    loss='categorical_crossentropy',
+    metrics=['accuracy']
+)
+
+# Display the model summary
+model.summary()
+
+
+
+
+# --- d. Train the model using SGD with 11 epochs ---
+
+print("\nStarting model training...")
+H = model.fit(
+    X_train, y_train,
+    validation_data=(X_test, y_test),
+    epochs=11,  # Train for 11 epochs as requested
+    batch_size=128,
+    verbose=1
+)
+print("Model training complete.")
+
+
+
+
+# --- e. Evaluate the network ---
+
+loss, accuracy = model.evaluate(X_test, y_test, verbose=0)
+
+print(f"Test Loss: {loss:.4f}")
+print(f"Test Accuracy: {accuracy * 100:.2f}%")
+
+
+
+
+# --- f. Plot the training loss and accuracy ---
+
+plt.style.use("ggplot")
+plt.figure()
+
+plt.plot(np.arange(0, 11), H.history["loss"], label="Training Loss")
+plt.plot(np.arange(0, 11), H.history["val_loss"], label="Validation Loss")
+plt.plot(np.arange(0, 11), H.history["accuracy"], label="Training Accuracy")
+plt.plot(np.arange(0, 11), H.history["val_accuracy"], label="Validation Accuracy")
+
+plt.title("Training Loss and Accuracy on CIFAR-10")
+plt.xlabel("Epoch #")
+plt.ylabel("Loss/Accuracy")
+plt.legend()
+plt.show()
+
+
+
+
