@@ -1,0 +1,142 @@
+# Install required packages if not already available (run in Jupyter)
+
+
+import pandas as pd
+import numpy as np
+from tensorflow.keras.models import Sequential, Model
+from tensorflow.keras.layers import Dense
+from sklearn.preprocessing import StandardScaler
+from sklearn.model_selection import train_test_split
+import matplotlib.pyplot as plt
+
+
+
+data = pd.read_csv("./creditcard.csv")
+data.shape
+
+data.head()
+
+normal_data = data[data['Class'] == 0]
+fraud_data = data[data['Class']==1]
+
+
+X = normal_data.iloc[:, :-1]
+
+
+# Step 6: Scale/normalize the data
+scaler = StandardScaler()
+X_scaled = scaler.fit_transform(X)
+X_scaled.shape
+
+
+
+# Step 7: Build encoder architecture (Step c) - IMPROVED
+from tensorflow.keras import Input
+from tensorflow.keras.models import Model
+from tensorflow.keras.layers import Dense, Dropout
+
+input_dim = X_scaled.shape[1]
+
+input_layer = Input(shape=(input_dim,))
+# Encoder - gradually compress the data
+encoded = Dense(20, activation='relu')(input_layer)
+encoded = Dense(14, activation='relu')(encoded)
+encoded = Dense(10, activation='relu')(encoded)  # Bottleneck layer
+
+# Step 8: Build decoder architecture (Step d) - IMPROVED
+# Decoder - mirror the encoder
+decoded = Dense(14, activation='relu')(encoded)
+decoded = Dense(20, activation='relu')(decoded)
+decoded = Dense(input_dim, activation='linear')(decoded)
+
+
+
+# Step 9: Combine into full autoencoder
+# Combine encoder and decoder into an autoencoder model
+autoencoder = Model(inputs=input_layer, outputs=decoded)
+
+
+
+# Step 10: Compile model (Step e)
+autoencoder.compile(optimizer='adam', loss='mse', metrics=['mae'])
+autoencoder.summary()
+
+
+
+# Step 11: Train the model - IMPROVED with more epochs
+history = autoencoder.fit(X_scaled, X_scaled, epochs=50, batch_size=10, validation_split=0.2, shuffle=True, verbose=1)
+
+
+
+
+# Step 12: Evaluate and detect anomalies - IMPROVED threshold selection
+# Get reconstruction loss for TRAINING data (normal only)
+train_reconstructions = autoencoder.predict(X_scaled)
+train_mse = np.mean(np.power(X_scaled - train_reconstructions, 2), axis=1)
+
+# Try different threshold percentiles to find the best one
+# Start with 99th percentile (more conservative - fewer false positives)
+threshold = np.percentile(train_mse, 99)
+print(f"Threshold (99th percentile): {threshold}")
+
+# Now test on ALL data (normal + fraud)
+# Prepare all test data
+X_test_all = data.drop('Class', axis=1)
+y_test_all = data['Class']
+
+# Scale the test data using the same scaler
+X_test_scaled = scaler.transform(X_test_all)
+
+# Get reconstructions for all data
+test_reconstructions = autoencoder.predict(X_test_scaled)
+test_mse = np.mean(np.power(X_test_scaled - test_reconstructions, 2), axis=1)
+
+# Predict: if reconstruction error > threshold, it's an anomaly (fraud)
+predictions = (test_mse > threshold).astype(int)
+
+# Evaluate
+from sklearn.metrics import confusion_matrix, classification_report, accuracy_score, precision_score, recall_score, f1_score
+
+print("\n=== Evaluation Results ===")
+print(f"Accuracy: {accuracy_score(y_test_all, predictions):.4f}")
+print(f"Precision: {precision_score(y_test_all, predictions):.4f}")
+print(f"Recall: {recall_score(y_test_all, predictions):.4f}")
+print(f"F1-Score: {f1_score(y_test_all, predictions):.4f}")
+print("\nConfusion Matrix:")
+cm = confusion_matrix(y_test_all, predictions)
+print(cm)
+print(f"\nTrue Negatives: {cm[0,0]} | False Positives: {cm[0,1]}")
+print(f"False Negatives: {cm[1,0]} | True Positives: {cm[1,1]}")
+print("\nClassification Report:")
+print(classification_report(y_test_all, predictions, target_names=['Normal', 'Fraud']))
+
+
+
+
+# Optional: Visualize reconstruction errors
+plt.figure(figsize=(12, 5))
+
+plt.subplot(1, 2, 1)
+plt.hist(test_mse[y_test_all == 0], bins=50, alpha=0.7, label='Normal')
+plt.hist(test_mse[y_test_all == 1], bins=50, alpha=0.7, label='Fraud')
+plt.axvline(threshold, color='r', linestyle='--', label='Threshold')
+plt.xlabel('Reconstruction Error')
+plt.ylabel('Count')
+plt.legend()
+plt.title('Reconstruction Error Distribution')
+
+plt.subplot(1, 2, 2)
+plt.scatter(range(len(test_mse)), test_mse, c=y_test_all, cmap='coolwarm', alpha=0.5, s=1)
+plt.axhline(threshold, color='r', linestyle='--', label='Threshold')
+plt.xlabel('Sample Index')
+plt.ylabel('Reconstruction Error')
+plt.title('Reconstruction Error by Sample')
+plt.legend()
+plt.tight_layout()
+plt.show()
+
+
+
+
+
+
