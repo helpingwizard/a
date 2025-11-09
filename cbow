@@ -1,0 +1,154 @@
+import numpy as np
+import tensorflow as tf
+from tensorflow.keras.models import Model
+from tensorflow.keras.layers import Input, Embedding, Lambda, Dense
+from tensorflow.keras.preprocessing.text import Tokenizer
+from tensorflow.keras.preprocessing.sequence import pad_sequences
+from tensorflow.keras.utils import to_categorical
+import re
+
+
+
+
+# ---------------------------
+# 1. Load & preprocess text
+# ---------------------------
+
+text = """
+The speed of transmission is an important point of difference between the two viruses. Influenza has a shorter median incubation period (the time from infection to appearance of symptoms) and a shorter serial interval (the time between successive cases) than COVID-19 virus. The serial interval for COVID-19 virus is estimated to be 5-6 days, while for influenza virus, the serial interval is 3 days. This means that influenza can spread faster than COVID-19. 
+
+Further, transmission in the first 3-5 days of illness, or potentially pre-symptomatic transmission –transmission of the virus before the appearance of symptoms – is a major driver of transmission for influenza. In contrast, while we are learning that there are people who can shed COVID-19 virus 24-48 hours prior to symptom onset, at present, this does not appear to be a major driver of transmission. 
+
+The reproductive number – the number of secondary infections generated from one infected individual – is understood to be between 2 and 2.5 for COVID-19 virus, higher than for influenza. However, estimates for both COVID-19 and influenza viruses are very context and time-specific, making direct comparisons more difficult.  
+"""
+
+# Lowercase + remove symbols
+text = re.sub(r"[^a-zA-Z\s]", "", text.lower())
+
+tokenizer = Tokenizer()
+tokenizer.fit_on_texts([text])
+word2idx = tokenizer.word_index
+vocab_size = len(word2idx) + 1
+
+tokens = tokenizer.texts_to_sequences([text])[0]
+
+print("Vocab size:", vocab_size)
+print("Sample tokens:", tokens[:10])
+
+
+
+
+
+
+
+
+
+  
+# ---------------------------
+# 2. Generate CBOW training data
+# ---------------------------
+
+window_size = 2
+X = []
+y = []
+
+for i in range(window_size, len(tokens) - window_size):
+    context = tokens[i - window_size:i] + tokens[i + 1:i + window_size + 1]
+    target = tokens[i]
+    X.append(context)
+    y.append(target)
+
+X = np.array(X)
+y = to_categorical(y, vocab_size)
+
+print("Training samples:", X.shape, y.shape)
+
+
+
+
+
+
+
+# ---------------------------
+# 3. Build CBOW Model in Keras
+# ---------------------------
+
+embedding_dim = 40  # can be changed
+
+input_layer = Input(shape=(window_size * 2,))
+embedding_layer = Embedding(vocab_size, embedding_dim)(input_layer)
+
+# Average the embeddings of context words
+avg_layer = Lambda(lambda x: tf.reduce_mean(x, axis=1))(embedding_layer)
+
+output_layer = Dense(vocab_size, activation="softmax")(avg_layer)
+
+model = Model(inputs=input_layer, outputs=output_layer)
+model.compile(loss="categorical_crossentropy", optimizer="adam", metrics=["accuracy"])
+
+model.summary()
+
+
+
+
+
+
+
+
+
+
+
+
+  
+# ---------------------------
+# 4. Train model
+# ---------------------------
+
+history = model.fit(X, y, epochs=100, batch_size=32)
+
+
+
+
+
+
+
+  
+# ---------------------------
+# 5. Extract word embeddings
+# ---------------------------
+
+embeddings = model.get_layer("embedding_5").get_weights()[0]
+
+def get_word_vector(word):
+    return embeddings[word2idx[word]]
+
+print("\nVector for word 'virus':")
+print(get_word_vector("virus"))
+
+
+
+
+
+
+
+
+
+  # 6. Find Similar Words
+
+def similar(word, n=5):
+    vec = get_word_vector(word)
+    scores = [(w, np.dot(vec, embeddings[idx]) / (np.linalg.norm(vec) * np.linalg.norm(embeddings[idx]))) 
+              for w, idx in word2idx.items() if w != word]
+    scores.sort(reverse=True, key=lambda x: x[1])
+    for i in range(n):
+        print(f"{i+1}. {scores[i][0]}: {scores[i][1]:.3f}")
+
+similar("virus", 10)
+print()
+similar("transmission", 10)
+
+
+
+
+
+  
