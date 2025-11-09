@@ -1,0 +1,121 @@
+# --- a. Import the necessary packages ---
+
+import pandas as pd
+import numpy as np
+import tensorflow as tf
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import Conv2D, MaxPooling2D, Dense, Flatten
+from tensorflow.keras.optimizers import Adam # Switched to Adam for better CNN performance
+from tensorflow.keras.utils import to_categorical
+import matplotlib.pyplot as plt
+
+
+def load_and_preprocess_data(filepath, num_classes=10, image_size=(32, 32, 3)):
+
+    # 1. Load the dataset
+    print(f"Loading data from: {filepath}...")
+    data = pd.read_csv(filepath)
+
+    # 2. Separate features (pixels) and target (label)
+    X = data.iloc[:, :-1].values.astype('float32') # Pixel data starts from the second column
+    y = data['label'].values
+
+    # 3. Reshape the data for CNN: (samples, 784) -> (samples, 28, 28, 1)
+    # The '1' denotes a single colour channel (grayscale)
+    X = X.reshape(X.shape[0], *image_size)
+
+    # 4. Normalise the pixel data: Scale to the range [0, 1]
+    # MNIST pixels are 0 to 255 (unsigned 8-bit integers)
+    X /= 255.0
+
+    # . One-hot encode the target labels
+    y = to_categorical(y, num_classes=num_classes)
+
+    return X, y
+
+
+
+
+
+  # Load the training and testing data
+
+X_train, y_train = load_and_preprocess_data('/content/drive/MyDrive/colab datasets/LP4_datasets/cifar_train.csv')
+X_test, y_test = load_and_preprocess_data('/content/drive/MyDrive/colab datasets/LP4_datasets/cifar_test.csv')
+
+
+
+  # --- b. Defining the model's architecture ---
+
+model = Sequential([
+    # First Convolutional Block
+    Conv2D(32, (3, 3), activation='relu', input_shape=(32, 32, 3), name='Conv_1'),
+    MaxPooling2D((2, 2), name='Pool_1'),
+
+    # Second Convolutional Block
+    Conv2D(64, (3, 3), activation='relu', name='Conv_2'),
+    MaxPooling2D((2, 2), name='Pool_2'),
+
+    # Classification Head (Feedforward/Dense Layers)
+    Flatten(name='Flatten_Layer'), # Flatten feature maps to a vector
+    Dense(100, activation='relu', name='Dense_1'),
+    Dense(10, activation='softmax', name='Output_Layer') # Output 10 classes
+])
+
+
+
+
+  # Compile the model
+# We use the Adam optimizer and the categorical crossentropy loss
+model.compile(
+    optimizer=Adam(learning_rate=0.001), # Adam is generally superior for CNNs
+    loss='categorical_crossentropy',
+    metrics=['accuracy']
+)
+
+# Display the model summary
+model.summary()
+
+
+
+
+  # --- c. Training the model ---
+
+print("Starting model training for 10 epochs...")
+H = model.fit(
+    X_train, y_train,
+    validation_data=(X_test, y_test),
+    epochs=10,
+    batch_size=128,
+    verbose=1
+)
+print("Model training complete.")
+
+
+
+
+  # --- d. Estimating the model's performance ---
+
+loss, accuracy = model.evaluate(X_test, y_test, verbose=0)
+print(f"Test Loss: {loss:.4f}")
+print(f"Test Accuracy: {accuracy * 100:.2f}%")
+
+
+
+# Plotting the training progress
+plt.style.use("ggplot")
+plt.figure()
+
+plt.plot(np.arange(0, 10), H.history["loss"], label="Training Loss")
+plt.plot(np.arange(0, 10), H.history["val_loss"], label="Validation Loss")
+plt.plot(np.arange(0, 10), H.history["accuracy"], label="Training Accuracy")
+plt.plot(np.arange(0, 10), H.history["val_accuracy"], label="Validation Accuracy")
+
+plt.title("Training Loss and Accuracy on CIFAR-10")
+plt.xlabel("Epoch #")
+plt.ylabel("Loss/Accuracy")
+plt.legend()
+plt.show()
+
+
+
+  
