@@ -1,0 +1,122 @@
+# ==============================================================
+# Object Detection using Transfer Learning (VGG16)
+# ==============================================================
+# Steps:
+# a. Load pre-trained CNN (VGG16)
+# b. Freeze lower layers (feature extractor)
+# c. Add custom classifier
+# d. Train classifier
+# e. Evaluate and visualize results for ONE image
+# ==============================================================
+
+# ---- Import Required Libraries ----
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import Dense, Dropout, Flatten
+from tensorflow.keras.preprocessing.image import ImageDataGenerator
+from tensorflow.keras.optimizers import Adam
+from tensorflow.keras.applications import VGG16
+from tensorflow.keras.applications.vgg16 import preprocess_input
+
+import numpy as np
+import matplotlib.pyplot as plt
+
+# ---- 1. Load Pre-trained Model (VGG16 without top layers) ----
+# include_top=False → remove final classification layer
+base = VGG16(
+    weights="vgg16_weights_tf_dim_ordering_tf_kernels_notop.h5",
+    include_top=False,
+    input_shape=(224, 224, 3)
+)
+
+# ---- 2. Freeze base model layers ----
+# We don't want to train the VGG16 feature extractor again
+for layer in base.layers:
+    layer.trainable = False
+
+# ---- 3. Image Data Preparation ----
+# This will load images from folders and prepare them for the model
+train_gen = ImageDataGenerator(
+    preprocessing_function=preprocess_input,  # process images for VGG16
+    validation_split=0.2                      # split dataset into training & validation
+)
+
+# Select classes for training
+selected_classes = ['airplanes', 'ant']
+
+# Training data generator
+train_data = train_gen.flow_from_directory(
+   
+    "C:\\Users\\Asus\\OneDrive\\Desktop\\sem_7_practical\\LP4\\caltech-101-img-20251109T143701Z-1-001\caltech-101-img"
+,  # path to your dataset folder
+    target_size=(224, 224),                      # resize all images to 224x224
+    batch_size=32,
+    subset='training',                           # use 80% for training
+    classes=selected_classes                     # only use these 2 classes
+)
+
+# Validation data generator
+val_data = train_gen.flow_from_directory(
+    "C:\\Users\\Asus\\OneDrive\\Desktop\\sem_7_practical\\LP4\\caltech-101-img-20251109T143701Z-1-001\caltech-101-img"
+ # path to your dataset folder
+,
+    target_size=(224, 224),
+    batch_size=32,
+    subset='validation',                         # use 20% for validation
+    classes=selected_classes
+)
+
+# ---- 4. Add Custom Classifier on top of VGG16 ----
+model = Sequential([
+    base,                       # pretrained base
+    Flatten(),                   # flatten the 3D feature maps
+    Dense(256, activation='relu'),
+    Dropout(0.2),
+    Dense(256, activation='relu'),
+    Dropout(0.4),
+    Dense(train_data.num_classes, activation='softmax')  # output layer
+])
+
+# ---- 5. Compile Model ----
+# Using Adam optimizer, categorical_crossentropy for multi-class classification
+model.compile(
+    optimizer=Adam(),
+    loss="categorical_crossentropy",
+    metrics=["accuracy"]
+)
+
+# ---- 6. Train Classifier Layers ----
+# (Base layers are frozen, so only new Dense layers will train)
+model.fit(train_data, validation_data=val_data, epochs=5)
+
+# ---- 7. Evaluate Model ----
+loss, accuracy = model.evaluate(val_data)
+print(f"Validation Loss: {loss:.4f}")
+print(f"Validation Accuracy: {accuracy:.4f}")
+
+# ==============================================================
+# 8. Predict & Show Results for ONE IMAGE from Validation Set
+# ==============================================================
+
+# Take one batch of images from validation data
+images, labels = next(val_data)
+
+# Pick only the first image in the batch
+image = images[0]
+label = labels[0]
+
+# Make prediction for this one image (expand dims → make it 1 sample)
+prediction = model.predict(np.expand_dims(image, axis=0))
+predicted_class = np.argmax(prediction)
+true_class = np.argmax(label)
+
+# ---- Show the image with True and Predicted label ----
+plt.figure(figsize=(5, 5))
+plt.imshow(image.astype("uint8"))  # show image
+plt.title(f"True: {selected_classes[true_class]}\nPred: {selected_classes[predicted_class]}")
+plt.axis('off')
+plt.show()
+
+# ---- Print Prediction Info ----
+print(f"\nTrue Label: {selected_classes[true_class]}")
+print(f"Predicted Label: {selected_classes[predicted_class]}")
+print(f"Confidence: {np.max(prediction)*100:.2f}%")
