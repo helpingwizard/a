@@ -1,0 +1,160 @@
+from google.colab import drive
+drive.mount('/content/drive')
+
+import numpy as np
+import nltk
+import re
+import os # Import for file handling
+from nltk.tokenize import word_tokenize
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import Dense
+from tensorflow.keras.optimizers import Adam
+from tensorflow.keras.utils import to_categorical
+
+import nltk
+nltk.download('punkt')
+nltk.download('punkt_tab')
+
+# --- Model Parameters ---
+TEXT_FILE_PATH = '/content/drive/MyDrive/colab datasets/LP4_datasets/cbow.txt' # <-- CHANGE THIS if your file name is different
+WINDOW_SIZE = 2                # Number of context words to consider on each side
+EMBEDDING_DIM = 100            # Dimension of the final word vector
+EPOCHS = 50                    # Number of training epochs (Increase for better results)
+
+
+def preprocess_text(file_path):
+
+    # 1. Read the text from the file
+    with open(file_path, 'r', encoding='utf-8') as f:
+        text = f.read()
+
+    # 2. Clean and Tokenize
+    text = text.lower()
+    text = re.sub(r'[^a-z\s]', '', text) # Remove punctuation and numbers
+    tokens = word_tokenize(text)
+
+    # 3. Build Vocabulary
+    vocabulary = sorted(list(set(tokens)))
+
+    # Create mappings
+    word_to_index = {word: i for i, word in enumerate(vocabulary)}
+    index_to_word = {i: word for i, word in enumerate(vocabulary)}
+
+    VOCAB_SIZE = len(vocabulary)
+    print(f"Total vocabulary size: {VOCAB_SIZE} unique words.")
+
+    return tokens, VOCAB_SIZE, word_to_index, index_to_word
+
+
+
+def generate_cbow_data(tokens, word_to_index, vocab_size, window_size):
+
+    data = []
+
+    for i, target_word in enumerate(tokens):
+        target_index = word_to_index[target_word]
+        context_indices = []
+
+        # Collect context words within the window
+        for j in range(1, window_size + 1):
+            if i - j >= 0:
+                context_indices.append(word_to_index[tokens[i - j]])
+            if i + j < len(tokens):
+                context_indices.append(word_to_index[tokens[i + j]])
+
+        if context_indices:
+            data.append((context_indices, target_index))
+
+    # Convert the context indices into a summed one-hot vector for simplicity in Keras
+    X_cbow = np.zeros((len(data), vocab_size), dtype='float32')
+    Y_cbow = np.zeros((len(data), vocab_size), dtype='float32')
+
+    for row_idx, (context_indices, target_index) in enumerate(data):
+        # Create summed one-hot vector for context (X)
+        for index in context_indices:
+            X_cbow[row_idx, index] += 1
+
+        # Create one-hot vector for target (Y)
+        Y_cbow[row_idx, target_index] = 1
+
+    print(f"Total training samples generated: {len(data)}")
+    print(f"Final Input Shape (X): {X_cbow.shape}")
+    print(f"Final Output Shape (Y): {Y_cbow.shape}")
+
+    return X_cbow, Y_cbow
+
+
+
+print("\nDefining CBOW Model Architecture...")
+model = Sequential([
+    # Input Layer: One-hot encoded context vector (size: VOCAB_SIZE)
+    # This Dense layer is the projection layer (it learns the embeddings)
+    Dense(EMBEDDING_DIM, activation='linear', input_shape=(VOCAB_SIZE,), name='Embedding_Projection'),
+
+    # Output Layer: Predicts the target word (size: VOCAB_SIZE)
+    Dense(VOCAB_SIZE, activation='softmax', name='Output_Softmax')
+])
+
+
+model.compile(
+    optimizer=Adam(learning_rate=0.01),
+    loss='categorical_crossentropy',
+    metrics=['accuracy']
+)
+
+model.summary()
+
+
+
+# Training the model
+print(f"\nStarting CBOW model training for {EPOCHS} epochs...")
+model.fit(
+    X_cbow, Y_cbow,
+    epochs=EPOCHS,
+    verbose=1
+)
+print("CBOW model training complete.")
+
+
+# The word embeddings are the weights of the 'Embedding_Projection' layer.
+word_embeddings = model.get_layer('Embedding_Projection').get_weights()[0]
+
+print(f"Extracted Embedding Matrix Shape: {word_embeddings.shape}")
+
+
+def predict_target_word(context_words, model, word_to_index, index_to_word, vocab_size):
+
+    # 1. Convert context words to indices and then to a summed one-hot vector
+    context_vector = np.zeros((1, vocab_size), dtype='float32')
+    for word in context_words:
+        if word in word_to_index:
+            context_vector[0, word_to_index[word]] += 1
+        else:
+            print(f"Warning: Context word '{word}' not in vocabulary. Skipping.")
+
+    # 2. Use the model to predict the probability distribution of the target word
+    predictions = model.predict(context_vector, verbose=0)[0] # Get the first (and only) sample's predictions
+
+    # 3. Get the index of the word with the highest probability
+    predicted_index = np.argmax(predictions)
+
+    # 4. Convert the index back to a word
+    predicted_word = index_to_word[predicted_index]
+
+    # You can also get the probability of the predicted word
+    predicted_probability = predictions[predicted_index]
+
+    return predicted_word, predicted_probability
+
+
+# Example usage:
+
+example_context = ['shorter', 'incubation', 'period'] # Example: Predict the word between 'making' and 'important'
+
+predicted_word, probability = predict_target_word(
+    example_context, model, word_to_index, index_to_word, VOCAB_SIZE
+)
+
+
+print(f"\nGiven the context words: {example_context}")
+print(f"Predicted target word: '{predicted_word}' with probability {probability:.4f}")
